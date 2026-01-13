@@ -67,6 +67,35 @@ class TestConfigParsing(unittest.TestCase):
         cfg = mcp_ssh_server.load_config(cfg_path)
         self.assertEqual(cfg.servers["a"].password_command, ("cmd", "/c", "echo", "x"))
 
+    def test_logging_config_parses(self):
+        cfg_path = self._write_config(
+            {
+                "version": 1,
+                "logging": {"enabled": True, "file": "./audit.jsonl", "format": "jsonl", "includeCommand": False},
+                "servers": {"a": {"host": "1.2.3.4"}},
+            }
+        )
+        cfg = mcp_ssh_server.load_config(cfg_path)
+        self.assertTrue(cfg.logging.enabled)
+        self.assertIsNotNone(cfg.logging.file)
+        self.assertTrue(str(cfg.logging.file).endswith("audit.jsonl"))
+        self.assertEqual(cfg.logging.format, "jsonl")
+        # include_command is mandatory when logging is enabled
+        self.assertTrue(cfg.logging.include_command)
+
+    def test_logging_disable_env_overrides_file_env(self):
+        os_environ_prev = dict(mcp_ssh_server.os.environ)
+        try:
+            mcp_ssh_server.os.environ["MCP_SSH_AUDIT_LOG_FILE"] = "./audit.jsonl"
+            mcp_ssh_server.os.environ["MCP_SSH_AUDIT_LOG_DISABLE"] = "1"
+
+            cfg_path = self._write_config({"version": 1, "servers": {"a": {"host": "1.2.3.4"}}})
+            cfg = mcp_ssh_server.load_config(cfg_path)
+            self.assertFalse(cfg.logging.enabled)
+        finally:
+            mcp_ssh_server.os.environ.clear()
+            mcp_ssh_server.os.environ.update(os_environ_prev)
+
 
 if __name__ == "__main__":
     unittest.main()

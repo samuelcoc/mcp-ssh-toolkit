@@ -5,9 +5,11 @@ import re
 import shlex
 import subprocess
 import sys
+import threading
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -46,6 +48,21 @@ class Defaults:
 
 
 @dataclass(frozen=True)
+class LoggingConfig:
+    # Audit logging is ON by default. Disable explicitly if needed.
+    enabled: bool = True
+    file: Optional[str] = None
+    format: str = "jsonl"
+
+    # Audit details
+    include_command: bool = True
+    include_result: bool = True
+    include_stdout: bool = False
+    include_stderr: bool = False
+    log_tests: bool = False
+
+
+@dataclass(frozen=True)
 class ServerConfig:
     name: str
     host: str
@@ -72,6 +89,7 @@ class MCPConfig:
     default_server: Optional[str]
     defaults: Defaults
     policy: CommandPolicy
+    logging: LoggingConfig
 
 
 class MCPError(Exception):
@@ -339,12 +357,62 @@ def load_config(config_path: str) -> MCPConfig:
         if default_server not in servers:
             raise MCPError(-32002, f"defaultServer not found in servers: {default_server}")
 
+    logging_obj = raw.get("logging")
+    if logging_obj is None:
+        logging_obj = {}
+    if not isinstance(logging_obj, dict):
+        raise MCPError(-32002, "'logging' must be an object")
+
+    # Audit logging is enabled by default; disable explicitly.
+    logging_enabled = bool(logging_obj.get("enabled", True))
+    logging_disabled = os.environ.get("MCP_SSH_AUDIT_LOG_DISABLE") == "1"
+
+    logging_file = logging_obj.get("file")
+    if logging_file is not None and (not isinstance(logging_file, str) or not logging_file.strip()):
+        raise MCPError(-32002, "'logging.file' must be a non-empty string")
+
+    env_log_file = os.environ.get("MCP_SSH_AUDIT_LOG_FILE")
+    if env_log_file and not logging_disabled:
+        logging_enabled = True
+        logging_file = env_log_file
+
+    if logging_disabled:
+        logging_enabled = False
+
+    if logging_enabled and not logging_file:
+        logging_file = "~/.mcp-ssh-toolkit/audit.jsonl"
+
+    logging_format = logging_obj.get("format", "jsonl")
+    if not isinstance(logging_format, str) or not logging_format.strip():
+        raise MCPError(-32002, "'logging.format' must be a string")
+    if logging_format != "jsonl":
+        raise MCPError(-32002, f"Unsupported logging.format: {logging_format}")
+
+    # Command logging is mandatory when audit logging is enabled.
+    include_command = True
+    include_result = bool(logging_obj.get("includeResult", True))
+    include_stdout = bool(logging_obj.get("includeStdout", False))
+    include_stderr = bool(logging_obj.get("includeStderr", False))
+    log_tests = bool(logging_obj.get("logTests", False))
+
+    logging_cfg = LoggingConfig(
+        enabled=logging_enabled,
+        file=_expand_path(logging_file) if isinstance(logging_file, str) else None,
+        format=logging_format,
+        include_command=include_command,
+        include_result=include_result,
+        include_stdout=include_stdout,
+        include_stderr=include_stderr,
+        log_tests=log_tests,
+    )
+
     return MCPConfig(
         servers=servers,
         groups=groups,
         default_server=default_server,
         defaults=defaults,
         policy=global_policy,
+        logging=logging_cfg,
     )
 
 
@@ -414,6 +482,33 @@ def _error_to_dict(e: Exception) -> Dict[str, Any]:
             d["data"] = e.data
         return d
     return {"code": -32000, "message": str(e)}
+
+
+_AUDIT_LOCK = threading.Lock()
+
+
+def _utc_now_iso() -> str:
+    return datetime.now(timezone.utc).isoformat(timespec="seconds").replace("+00:00", "Z")
+
+
+def _audit_log(logging_cfg: LoggingConfig, event: Dict[str, Any]) -> None:
+    if not logging_cfg.enabled:
+        return
+    if logging_cfg.format != "jsonl":
+        return
+    if not logging_cfg.file:
+        return
+
+    try:
+        log_path = Path(logging_cfg.file)
+        log_path.parent.mkdir(parents=True, exist_ok=True)
+        line = json.dumps(event, ensure_ascii=False)
+        with _AUDIT_LOCK:
+            with log_path.open("a", encoding="utf-8") as f:
+                f.write(line + "\n")
+    except Exception:
+        # Never break the MCP flow because of logging errors.
+        return
 
 
 def _paramiko_exec(server: ServerConfig, password: str, command: str, timeout_s: Optional[float]) -> Dict[str, Any]:
@@ -821,6 +916,18 @@ def _atomic_write_json(config_path: str, data: Dict[str, Any]) -> None:
     os.replace(str(tmp_path), str(path))
 
 
+def _atomic_write_and_validate_config(config_path: str, data: Dict[str, Any]) -> None:
+    path = Path(config_path)
+    tmp_path = path.with_suffix(path.suffix + ".tmp")
+
+    tmp_path.write_text(json.dumps(data, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+
+    # Validate BEFORE replacing the real config.
+    _ = load_config(str(tmp_path))
+
+    os.replace(str(tmp_path), str(path))
+
+
 def _handle_ssh_add_server(config_path: str, arguments: Dict[str, Any]) -> Dict[str, Any]:
     name = arguments.get("server")
     host = arguments.get("host")
@@ -875,7 +982,7 @@ def _handle_ssh_add_server(config_path: str, arguments: Dict[str, Any]) -> Dict[
     if arguments.get("setDefault") is True:
         raw["defaultServer"] = name
 
-    _atomic_write_json(config_path, raw)
+    _atomic_write_and_validate_config(config_path, raw)
 
     return {
         "ok": True,
@@ -884,17 +991,72 @@ def _handle_ssh_add_server(config_path: str, arguments: Dict[str, Any]) -> Dict[
     }
 
 
-def _exec_targets_sequential(targets: List[ServerConfig], command: str, timeout_ms: Optional[int]) -> Dict[str, Any]:
+def _exec_targets_sequential(
+    targets: List[ServerConfig],
+    command: str,
+    timeout_ms: Optional[int],
+    logging_cfg: LoggingConfig,
+    *,
+    tool: str,
+    request_id: Any,
+    group: Optional[str],
+) -> Dict[str, Any]:
     results: Dict[str, Any] = {}
     ok = True
+
     for server in targets:
+        start = time.time()
         try:
-            results[server.name] = run_ssh(server, command, timeout_ms)
-            if results[server.name].get("exit_code") != 0:
+            res = run_ssh(server, command, timeout_ms)
+            results[server.name] = res
+            exit_code = res.get("exit_code")
+            if exit_code != 0:
                 ok = False
+
+            event: Dict[str, Any] = {
+                "ts": _utc_now_iso(),
+                "event": tool,
+                "request_id": request_id,
+                "server": server.name,
+                "host": server.host,
+                "port": server.port,
+                "user": server.user,
+                "group": group,
+                "ok": exit_code == 0,
+                "elapsed_ms": int((time.time() - start) * 1000),
+                "transport": res.get("transport"),
+            }
+            if logging_cfg.include_command:
+                event["command"] = command
+            if logging_cfg.include_result:
+                event["exit_code"] = exit_code
+            if logging_cfg.include_stdout and "stdout" in res:
+                event["stdout"] = res.get("stdout")
+            if logging_cfg.include_stderr and "stderr" in res:
+                event["stderr"] = res.get("stderr")
+            _audit_log(logging_cfg, event)
+
         except Exception as e:
             ok = False
             results[server.name] = {"error": _error_to_dict(e)}
+
+            event2: Dict[str, Any] = {
+                "ts": _utc_now_iso(),
+                "event": tool,
+                "request_id": request_id,
+                "server": server.name,
+                "host": server.host,
+                "port": server.port,
+                "user": server.user,
+                "group": group,
+                "ok": False,
+                "elapsed_ms": int((time.time() - start) * 1000),
+                "error": _error_to_dict(e),
+            }
+            if logging_cfg.include_command:
+                event2["command"] = command
+            _audit_log(logging_cfg, event2)
+
     return {"ok": ok, "results": results}
 
 
@@ -903,6 +1065,11 @@ def _exec_targets_parallel(
     command: str,
     timeout_ms: Optional[int],
     max_parallel: int,
+    logging_cfg: LoggingConfig,
+    *,
+    tool: str,
+    request_id: Any,
+    group: Optional[str],
 ) -> Dict[str, Any]:
     results: Dict[str, Any] = {}
     ok = True
@@ -910,23 +1077,68 @@ def _exec_targets_parallel(
     if max_parallel <= 0:
         raise MCPError(-32602, "'max_parallel' must be a positive integer")
 
+    start_by_name: Dict[str, float] = {s.name: time.time() for s in targets}
+
     with ThreadPoolExecutor(max_workers=max_parallel) as ex:
-        fut_to_name = {ex.submit(run_ssh, s, command, timeout_ms): s.name for s in targets}
-        for fut in as_completed(fut_to_name):
-            name = fut_to_name[fut]
+        fut_to_server = {ex.submit(run_ssh, s, command, timeout_ms): s for s in targets}
+        for fut in as_completed(fut_to_server):
+            server = fut_to_server[fut]
+            started = start_by_name.get(server.name, time.time())
             try:
                 res = fut.result()
-                results[name] = res
-                if res.get("exit_code") != 0:
+                results[server.name] = res
+                exit_code = res.get("exit_code")
+                if exit_code != 0:
                     ok = False
+
+                event: Dict[str, Any] = {
+                    "ts": _utc_now_iso(),
+                    "event": tool,
+                    "request_id": request_id,
+                    "server": server.name,
+                    "host": server.host,
+                    "port": server.port,
+                    "user": server.user,
+                    "group": group,
+                    "ok": exit_code == 0,
+                    "elapsed_ms": int((time.time() - started) * 1000),
+                    "transport": res.get("transport"),
+                }
+                if logging_cfg.include_command:
+                    event["command"] = command
+                if logging_cfg.include_result:
+                    event["exit_code"] = exit_code
+                if logging_cfg.include_stdout and "stdout" in res:
+                    event["stdout"] = res.get("stdout")
+                if logging_cfg.include_stderr and "stderr" in res:
+                    event["stderr"] = res.get("stderr")
+                _audit_log(logging_cfg, event)
+
             except Exception as e:
                 ok = False
-                results[name] = {"error": _error_to_dict(e)}
+                results[server.name] = {"error": _error_to_dict(e)}
+
+                event2: Dict[str, Any] = {
+                    "ts": _utc_now_iso(),
+                    "event": tool,
+                    "request_id": request_id,
+                    "server": server.name,
+                    "host": server.host,
+                    "port": server.port,
+                    "user": server.user,
+                    "group": group,
+                    "ok": False,
+                    "elapsed_ms": int((time.time() - started) * 1000),
+                    "error": _error_to_dict(e),
+                }
+                if logging_cfg.include_command:
+                    event2["command"] = command
+                _audit_log(logging_cfg, event2)
 
     return {"ok": ok, "results": results}
 
 
-def handle_tools_call(config_state: Dict[str, Any], config_path: str, params: Dict[str, Any]) -> Dict[str, Any]:
+def handle_tools_call(config_state: Dict[str, Any], config_path: str, params: Dict[str, Any], *, request_id: Any) -> Dict[str, Any]:
     config: MCPConfig = config_state["config"]
     name = params.get("name")
     arguments = params.get("arguments")
@@ -976,14 +1188,52 @@ def handle_tools_call(config_state: Dict[str, Any], config_path: str, params: Di
         results: Dict[str, Any] = {}
         ok = True
         for s in targets:
+            start_s = time.time()
             try:
                 r = ssh_test(s, timeout_ms)
                 results[s.name] = r
                 if not r.get("ok"):
                     ok = False
+
+                if config.logging.log_tests:
+                    ev: Dict[str, Any] = {
+                        "ts": _utc_now_iso(),
+                        "event": "ssh_test",
+                        "request_id": request_id,
+                        "server": s.name,
+                        "host": s.host,
+                        "port": s.port,
+                        "user": s.user,
+                        "group": group_name,
+                        "ok": bool(r.get("ok")),
+                        "elapsed_ms": int((time.time() - start_s) * 1000),
+                        "transport": r.get("transport"),
+                    }
+                    if config.logging.include_result and "exit_code" in r:
+                        ev["exit_code"] = r.get("exit_code")
+                    if config.logging.include_stderr and "stderr" in r:
+                        ev["stderr"] = r.get("stderr")
+                    _audit_log(config.logging, ev)
+
             except Exception as e:
                 ok = False
                 results[s.name] = {"error": _error_to_dict(e)}
+
+                if config.logging.log_tests:
+                    ev2: Dict[str, Any] = {
+                        "ts": _utc_now_iso(),
+                        "event": "ssh_test",
+                        "request_id": request_id,
+                        "server": s.name,
+                        "host": s.host,
+                        "port": s.port,
+                        "user": s.user,
+                        "group": group_name,
+                        "ok": False,
+                        "elapsed_ms": int((time.time() - start_s) * 1000),
+                        "error": _error_to_dict(e),
+                    }
+                    _audit_log(config.logging, ev2)
 
         out = {"ok": ok, "targets": [t.name for t in targets], "results": results}
         return {"content": [{"type": "text", "text": json.dumps(out, ensure_ascii=False, indent=2)}]}
@@ -1010,14 +1260,33 @@ def handle_tools_call(config_state: Dict[str, Any], config_path: str, params: Di
 
         targets = _select_targets(config, server_name, group_name)
 
+        logging_cfg = config.logging
+
         start = time.time()
         if name == "ssh_exec_parallel":
             max_parallel = arguments.get("max_parallel", 8)
             if not isinstance(max_parallel, int):
                 raise MCPError(-32602, "'max_parallel' must be an integer")
-            exec_out = _exec_targets_parallel(targets, command, timeout_ms, max_parallel)
+            exec_out = _exec_targets_parallel(
+                targets,
+                command,
+                timeout_ms,
+                max_parallel,
+                logging_cfg,
+                tool=name,
+                request_id=request_id,
+                group=group_name,
+            )
         else:
-            exec_out = _exec_targets_sequential(targets, command, timeout_ms)
+            exec_out = _exec_targets_sequential(
+                targets,
+                command,
+                timeout_ms,
+                logging_cfg,
+                tool=name,
+                request_id=request_id,
+                group=group_name,
+            )
 
         out = {
             "ok": exec_out["ok"],
@@ -1076,13 +1345,21 @@ def main(argv: Optional[List[str]] = None) -> int:
         try:
             msg = json.loads(line)
         except Exception as e:
-            sys.stdout.write(json.dumps(jsonrpc_error(None, -32700, f"Parse error: {e}")) + "\n")
+            # Claude Desktop's MCP parser doesn't accept id=null.
+            sys.stdout.write(json.dumps(jsonrpc_error(0, -32700, f"Parse error: {e}")) + "\n")
             sys.stdout.flush()
             continue
 
-        id_value = msg.get("id")
+        has_id = "id" in msg
+        raw_id = msg.get("id") if has_id else None
+        id_value = raw_id if isinstance(raw_id, (str, int)) else 0
+
         method = msg.get("method")
         params = msg.get("params")
+
+        # If this is a notification (no id), do not respond.
+        if not has_id:
+            continue
 
         try:
             reload_if_changed()
@@ -1098,7 +1375,7 @@ def main(argv: Optional[List[str]] = None) -> int:
             elif method == "tools/call":
                 if not isinstance(params, dict):
                     raise MCPError(-32602, "tools/call params must be an object")
-                out = handle_tools_call(config_state, config_path, params)
+                out = handle_tools_call(config_state, config_path, params, request_id=id_value)
                 sys.stdout.write(json.dumps(jsonrpc_result(id_value, out)) + "\n")
             else:
                 raise MCPError(-32601, f"Method not found: {method}")

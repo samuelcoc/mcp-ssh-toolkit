@@ -5,6 +5,16 @@
     "knownHostsFile": "~/.ssh/known_hosts",
     "extraArgs": ["-o", "BatchMode=yes"]
   },
+  "logging": {
+    "enabled": true,
+    "file": "~/.mcp-ssh-toolkit/audit.jsonl",
+    "format": "jsonl",
+    "includeCommand": true,
+    "includeResult": true,
+    "includeStdout": false,
+    "includeStderr": false,
+    "logTests": false
+  },
   "policy": {
     "deny": ["(?i)\\brm\\s+-rf\\b", "(?i)\\bshutdown\\b", "(?i)\\breboot\\b"]
   },

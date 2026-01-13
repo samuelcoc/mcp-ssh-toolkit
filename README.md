@@ -234,7 +234,37 @@ O MCP recarrega o `servers.json` automaticamente quando o arquivo muda (por `mti
 Além disso, existe:
 - Tool `ssh_reload`: força recarregar imediatamente.
 
+## Audit logging (comandos executados)
+
+Por padrão, o audit log fica **habilitado** e registra os comandos executados (`ssh_exec` / `ssh_exec_parallel`) com horário e servidor.
+O formato é JSON Lines (`.jsonl`), 1 evento por linha.
+
+Para desabilitar explicitamente:
+- `"logging": {"enabled": false}`
+- ou env var: `MCP_SSH_AUDIT_LOG_DISABLE=1`
+
+Exemplo:
+
+```json
+{
+  "logging": {
+    "enabled": true,
+    "file": "~/.mcp-ssh-toolkit/audit.jsonl",
+    "format": "jsonl",
+    "includeCommand": true,
+    "includeResult": true,
+    "includeStdout": false,
+    "includeStderr": false,
+    "logTests": false
+  }
+}
+```
+
+Também dá pra apontar o arquivo via env var:
+- `MCP_SSH_AUDIT_LOG_FILE=/caminho/para/audit.jsonl`
+
 ## Tools disponíveis
+
 
 - `ssh_list`: lista servidores/grupos/defaults/policy
 - `ssh_info`: mostra config sanitizada de um servidor (sem segredos)

@@ -23,6 +23,14 @@ Formato do servers.json (version 1):
     "deny": ["(?i)\\brm\\s+-rf\\b"]
   },
 
+  "logging": {
+    "enabled": true,
+    "file": "~/.mcp-ssh-toolkit/audit.jsonl",
+    "format": "jsonl",
+    "includeCommand": true,
+    "includeResult": true
+  },
+
   "defaultServer": "nome-do-servidor",
 
   "groups": {
