@@ -23,7 +23,7 @@ A recomendação é **passar segredos por env var** e só salvar no `servers.jso
 - `servers.json`: sua configuração local (não commitar).
 - `servers.example.json`: exemplo pronto (pode commitar).
 - `USAGE.txt`: resumo rápido.
-- `pyproject.toml`: empacotamento opcional.
+
 - `tests/test_mcp_ssh_server.py`: testes unitários básicos.
 
 ## Requisitos
@@ -186,7 +186,35 @@ Estrutura (v1):
 }
 ```
 
+### Policy (allow/deny): modelo de decisão
+
+A policy pode existir no root (`policy`) e também por servidor (`servers.<nome>.policy`). O modelo é:
+- `deny` sempre bloqueia: se QUALQUER regex em `deny` bater, o comando é negado.
+- `allow` é allowlist: se existir pelo menos um regex em `allow`, o comando só é permitido se bater em pelo menos um.
+- Se `allow` estiver vazio/ausente, o padrão é "allow all" (exceto o que for negado por `deny`).
+- Root + servidor são mesclados (acumulam): `allow_final = allow_global + allow_servidor`, `deny_final = deny_global + deny_servidor`.
+
+### Segurança: comando remoto e shell
+
+- `ssh_exec` envia `command` como uma string para o host remoto. Na prática, isso significa que **o comando é interpretado no lado remoto** (normalmente por um shell), então metacaracteres como `;`, `&&`, `|`, `>`, `<`, `$()`, crases, etc. podem alterar o que de fato executa.
+- Isso é diferente de `passwordCommand`, que roda localmente **sem** `shell=True` (logo, não sofre interpretação de shell local).
+
+Se você quiser um modo mais "hardening", a recomendação é:
+- Preferir `policy.allow` com regex ancorada (ex.: `^(uptime|whoami)$`) para permitir só comandos simples.
+- (Opcional) Bloquear metacaracteres via `policy.deny`.
+
+Exemplo de `deny` para bloquear metacaracteres comuns (ajuste conforme sua necessidade):
+
+```json
+{
+  "policy": {
+    "deny": ["[;&|><`$()\\n\\r]"]
+  }
+}
+```
+
 ### Autenticação (sem expor senha)
+
 
 Recomendado:
 - **Chave SSH** (`identityFile`) / ssh-agent (usa OpenSSH)
