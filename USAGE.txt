@@ -1,0 +1,99 @@
+MCP SSH (Python)
+
+Arquivos:
+- servers.json: sua lista de servidores nomeados (seu)
+- servers.example.json: exemplo completo (defaults/groups/policy/senha)
+- mcp_ssh_server.py: servidor MCP via stdio
+
+Formato do servers.json (version 1):
+{
+  "version": 1,
+
+  "defaults": {
+    "user": "ubuntu",
+    "port": 22,
+    "identityFile": "~/.ssh/id_ed25519",
+    "strictHostKeyChecking": "accept-new|yes|no",
+    "knownHostsFile": "~/.ssh/known_hosts",
+    "extraArgs": ["-o", "BatchMode=yes"]
+  },
+
+  "policy": {
+    "allow": ["^uptime$"],
+    "deny": ["(?i)\\brm\\s+-rf\\b"]
+  },
+
+  "defaultServer": "nome-do-servidor",
+
+  "groups": {
+    "prod": ["prod-web", "prod-db"],
+    "staging": ["staging"]
+  },
+
+  "servers": {
+    "nome-do-servidor": {
+      "host": "10.0.0.10",
+      "port": 22,
+      "user": "ubuntu",
+      "identityFile": "~/.ssh/id_ed25519",
+
+      "strictHostKeyChecking": "accept-new|yes|no",
+      "knownHostsFile": "~/.ssh/known_hosts",
+      "extraArgs": ["-o", "BatchMode=yes"],
+
+      "passwordEnv": "SSH_PASSWORD_ENVVAR",
+      "passwordCommand": ["op", "read", "op://vault/item/field"],
+      "passwordKeyring": {"service": "mcp-ssh", "username": "ubuntu"},
+
+      "policy": {
+        "allow": ["^(uptime|whoami)$"],
+        "deny": ["(?i)\\bshutdown\\b"]
+      }
+    }
+  }
+}
+
+Notas de autenticação (sem expor senha no JSON):
+- Recomendado: chave SSH (identityFile/ssh-agent) -> usa OpenSSH do sistema.
+- Servidor com senha: configure UM entre:
+  - passwordEnv (recomendado)
+  - passwordCommand (lista de args; sem shell)
+  - passwordKeyring (requer lib keyring)
+  - password (texto plano no JSON; evite)
+- Quando tem senha configurada, o MCP usa 'paramiko'.
+
+Segurança:
+- Para OpenSSH, se strictHostKeyChecking não for definido, o MCP força "yes".
+- Use defaults.strictHostKeyChecking="accept-new" se você quiser menos fricção em dev.
+- policy.allow/policy.deny é regex e pode existir no root e por servidor.
+
+Como rodar (stdio):
+- Defina MCP_SSH_CONFIG apontando para seu servers.json (opcional)
+- Rode o servidor:
+    python mcp_ssh_server.py
+  ou:
+    python mcp_ssh_server.py --config servers.json
+
+Tools expostos:
+- ssh_reload: recarrega o servers.json do disco
+- ssh_add_server: adiciona/atualiza um server no servers.json (sem expor senha)
+- ssh_list: lista servidores/grupos/defaults/policy
+- ssh_info: mostra config sanitizada de um servidor
+- ssh_test: testa conexão/auth
+- ssh_exec: executa em server ou group (sequencial)
+- ssh_exec_parallel: executa em group (paralelo)
+
+Hot reload (sem reiniciar o MCP):
+- O servidor recarrega automaticamente o config quando o arquivo muda.
+- Se quiser forçar manualmente: chame ssh_reload.
+
+Exemplos de inputs:
+- ssh_exec (server): {"server": "prod-web", "command": "uptime", "timeout_ms": 30000}
+- ssh_exec (group): {"group": "prod", "command": "uptime"}
+- ssh_exec_parallel: {"group": "prod", "command": "uptime", "max_parallel": 8}
+
+Requisitos:
+- Python 3.10+
+- Cliente ssh disponível no PATH (OpenSSH)
+- Para auth por senha: paramiko instalado (pip install paramiko)
+- Para passwordKeyring: keyring instalado (pip install keyring)

@@ -1,0 +1,44 @@
+{
+  "version": 1,
+  "defaults": {
+    "strictHostKeyChecking": "accept-new",
+    "knownHostsFile": "~/.ssh/known_hosts",
+    "extraArgs": ["-o", "BatchMode=yes"]
+  },
+  "policy": {
+    "deny": ["(?i)\\brm\\s+-rf\\b", "(?i)\\bshutdown\\b", "(?i)\\breboot\\b"]
+  },
+  "defaultServer": "prod-web",
+  "groups": {
+    "prod": ["prod-web"],
+    "all": ["prod-web", "staging", "legacy", "servidor-tester a16"]
+  },
+  "servers": {
+    "prod-web": {
+      "host": "10.0.0.10",
+      "port": 22,
+      "user": "ubuntu",
+      "identityFile": "~/.ssh/id_ed25519",
+      "policy": {
+        "allow": ["^(uptime|whoami|uname -a)$"]
+      }
+    },
+    "staging": {
+      "host": "staging.example.com",
+      "user": "your-user"
+    },
+    "legacy": {
+      "host": "192.168.1.50",
+      "user": "your-user",
+      "passwordEnv": "LEGACY_SSH_PASSWORD",
+      "strictHostKeyChecking": "no"
+    },
+    "servidor-tester a16": {
+      "host": "192.168.1.39",
+      "port": 8022,
+      "user": "your-user",
+      "passwordEnv": "SERVIDOR_TESTER_A16_PASSWORD",
+      "strictHostKeyChecking": "no"
+    }
+  }
+}
