@@ -19,7 +19,11 @@ A recomendação é **passar segredos por env var** e só salvar no `servers.jso
 
 ## Arquivos
 
-- `mcp_ssh_server.py`: servidor MCP via `stdio`.
+- `mcp_ssh_server.py`: entrypoint compatível do servidor MCP via `stdio`.
+- `mcp_ssh/`: codigo modular do MCP (`main.py`, `config.py`, `models.py`, `errors.py`, `policy.py`, `audit.py`, `ssh_exec.py`, `tools.py`, `handlers.py`).
+- `web_admin_server.py`: entrypoint compatível do painel web local.
+- `web_admin/`: estrutura MVC do painel web (`model.py`, `view.py`, `controller.py`, `app.py`).
+- `web_admin_ui.html`: template HTML do painel web.
 - `servers.json`: sua configuração local (não commitar).
 - `servers.example.json`: exemplo pronto (pode commitar).
 - `USAGE.txt`: resumo rápido.
@@ -43,8 +47,36 @@ Opcional:
 python mcp_ssh_server.py --config servers.json
 ```
 
+Opcional (modo pacote):
+
+```bash
+python -m mcp_ssh.main --config servers.json
+```
+
 Você também pode usar a env var:
 - `MCP_SSH_CONFIG=...` (se não passar `--config`)
+
+### Painel web local (admin)
+
+Se você quiser uma interface amigavel para gerenciar `servers.json`, executar comandos e consultar historico:
+
+```bash
+python web_admin_server.py --config servers.json --host 127.0.0.1 --port 8787
+```
+
+Opcional (modo pacote):
+
+```bash
+python -m web_admin.app --config servers.json --host 127.0.0.1 --port 8787
+```
+
+Depois abra no navegador:
+
+```text
+http://127.0.0.1:8787
+```
+
+O painel usa o mesmo `servers.json` e o mesmo arquivo de audit log configurado em `logging.file`.
 
 ### 2) Usar no opencode
 
@@ -263,6 +295,26 @@ Exemplo:
 Também dá pra apontar o arquivo via env var:
 - `MCP_SSH_AUDIT_LOG_FILE=/caminho/para/audit.jsonl`
 
+## Log paralelo de upload/delete (file ops)
+
+Uploads e exclusoes remotas geram um log separado (`file_ops.jsonl`) para facilitar auditoria operacional.
+
+Config no `servers.json`:
+
+```json
+{
+  "fileOpsLogging": {
+    "enabled": true,
+    "file": "~/.mcp-ssh-toolkit/file_ops.jsonl",
+    "format": "jsonl"
+  }
+}
+```
+
+Env vars:
+- `MCP_SSH_FILEOPS_LOG_FILE=/caminho/para/file_ops.jsonl`
+- `MCP_SSH_FILEOPS_LOG_DISABLE=1`
+
 ## Tools disponíveis
 
 
@@ -271,6 +323,8 @@ Também dá pra apontar o arquivo via env var:
 - `ssh_test`: testa conexão/auth (server ou group)
 - `ssh_exec`: executa em `server` ou `group` (sequencial)
 - `ssh_exec_parallel`: executa em `group` (paralelo)
+- `ssh_upload`: envia arquivo local para remoto via SFTP (`server` ou `group`)
+- `ssh_delete`: exclui arquivo/diretorio remoto via SFTP (`server` ou `group`)
 - `ssh_add_server`: adiciona/atualiza server e opcionalmente inclui em grupos
 - `ssh_reload`: recarrega config do disco
 
@@ -304,6 +358,40 @@ Também dá pra apontar o arquivo via env var:
 
 O MCP deve retornar erro `-32602` informando que o comando foi bloqueado pela policy.
 
+### Upload e exclusao remota
+
+Upload para um servidor:
+
+```json
+{
+  "server": "autopago-target",
+  "local_path": "C:/tmp/app.tar.gz",
+  "remote_path": "/tmp/app.tar.gz",
+  "overwrite": true,
+  "make_dirs": true
+}
+```
+
+Excluir arquivo remoto:
+
+```json
+{
+  "server": "autopago-target",
+  "remote_path": "/tmp/app.tar.gz"
+}
+```
+
+Excluir diretório remoto recursivo:
+
+```json
+{
+  "server": "autopago-target",
+  "remote_path": "/tmp/build-dir",
+  "recursive": true,
+  "missing_ok": true
+}
+```
+
 ## Tool `ssh_add_server` (adicionar sem reiniciar)
 
 Exemplo: adiciona `srv1`, coloca no grupo `prod` e define como default:
@@ -329,6 +417,12 @@ Observação:
 
 ```bash
 python -m unittest discover -s tests -p "test*.py"
+```
+
+Cheque rápido de sintaxe (opcional):
+
+```bash
+python -m py_compile mcp_ssh_server.py web_admin_server.py
 ```
 
 ## Troubleshooting
