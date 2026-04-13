@@ -3,7 +3,11 @@ MCP SSH (Python)
 Arquivos:
 - servers.json: sua lista de servidores nomeados (seu)
 - servers.example.json: exemplo completo (defaults/groups/policy/senha)
-- mcp_ssh_server.py: servidor MCP via stdio
+- mcp_ssh_server.py: entrypoint compatível do servidor MCP via stdio
+- mcp_ssh/: pacote modular do MCP (main/config/models/errors/policy/audit/ssh_exec/tools/handlers)
+- web_admin_server.py: entrypoint compatível do painel web
+- web_admin/: MVC do painel web
+- web_admin_ui.html: template HTML do painel
 
 Formato do servers.json (version 1):
 {
@@ -29,6 +33,12 @@ Formato do servers.json (version 1):
     "format": "jsonl",
     "includeCommand": true,
     "includeResult": true
+  },
+
+  "fileOpsLogging": {
+    "enabled": true,
+    "file": "~/.mcp-ssh-toolkit/file_ops.jsonl",
+    "format": "jsonl"
   },
 
   "defaultServer": "nome-do-servidor",
@@ -81,6 +91,16 @@ Como rodar (stdio):
     python mcp_ssh_server.py
   ou:
     python mcp_ssh_server.py --config servers.json
+  ou (modo pacote):
+    python -m mcp_ssh.main --config servers.json
+
+Painel web local (admin):
+- Rodar:
+    python web_admin_server.py --config servers.json --host 127.0.0.1 --port 8787
+  ou (modo pacote):
+    python -m web_admin.app --config servers.json --host 127.0.0.1 --port 8787
+- Abrir no navegador:
+    http://127.0.0.1:8787
 
 Tools expostos:
 - ssh_reload: recarrega o servers.json do disco
@@ -90,6 +110,8 @@ Tools expostos:
 - ssh_test: testa conexão/auth
 - ssh_exec: executa em server ou group (sequencial)
 - ssh_exec_parallel: executa em group (paralelo)
+- ssh_upload: envia arquivo local para remoto via SFTP (server/group)
+- ssh_delete: remove arquivo/diretorio remoto via SFTP (server/group)
 
 Hot reload (sem reiniciar o MCP):
 - O servidor recarrega automaticamente o config quando o arquivo muda.
@@ -99,6 +121,9 @@ Exemplos de inputs:
 - ssh_exec (server): {"server": "prod-web", "command": "uptime", "timeout_ms": 30000}
 - ssh_exec (group): {"group": "prod", "command": "uptime"}
 - ssh_exec_parallel: {"group": "prod", "command": "uptime", "max_parallel": 8}
+- ssh_upload: {"server":"prod-web","local_path":"C:/tmp/app.tar.gz","remote_path":"/tmp/app.tar.gz","overwrite":true}
+- ssh_delete: {"server":"prod-web","remote_path":"/tmp/app.tar.gz"}
+- ssh_delete (recursivo): {"server":"prod-web","remote_path":"/tmp/build","recursive":true,"missing_ok":true}
 
 Requisitos:
 - Python 3.10+

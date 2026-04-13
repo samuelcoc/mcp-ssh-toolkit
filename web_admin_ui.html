@@ -1,0 +1,1224 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>MCP SSH Web Admin</title>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;700;800&family=JetBrains+Mono:wght@400;500&display=swap');
+    :root {
+      --bg0: #0b131a;
+      --bg1: #122431;
+      --bg2: #1a3d54;
+      --panel: rgba(8, 16, 26, 0.86);
+      --line: rgba(164, 194, 219, 0.22);
+      --text: #edf5fb;
+      --muted: #9eb5c8;
+      --ok: #4ad59b;
+      --bad: #ff8f8f;
+      --accent: #77cbf8;
+      --radius: 14px;
+      --shadow: 0 20px 45px rgba(0, 0, 0, 0.35);
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      font-family: 'Manrope', sans-serif;
+      color: var(--text);
+      background: radial-gradient(850px 380px at 10% 0%, #245577 0%, transparent 55%),
+                  radial-gradient(980px 420px at 100% 100%, #153d59 0%, transparent 62%),
+                  linear-gradient(172deg, var(--bg0), var(--bg1) 48%, var(--bg2));
+    }
+    .topbar {
+      position: sticky;
+      top: 0;
+      z-index: 30;
+      background: #050608;
+      border-bottom: 1px solid #20252d;
+      box-shadow: 0 10px 28px rgba(0, 0, 0, 0.32);
+    }
+    .topbar-inner {
+      width: min(1280px, 96vw);
+      margin: 0 auto;
+      min-height: 62px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 14px;
+    }
+    .brand {
+      color: #fff;
+      font-weight: 800;
+      letter-spacing: .08em;
+      font-size: 1.02rem;
+    }
+    .updated { color: #c4cfdd; font-size: .88rem; }
+    main {
+      width: min(1280px, 96vw);
+      margin: 16px auto 32px;
+      animation: in .35s ease-out;
+    }
+    @keyframes in { from { opacity: 0; transform: translateY(7px); } to { opacity: 1; transform: translateY(0);} }
+    .nav {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-bottom: 12px;
+    }
+    .nav button {
+      border: 1px solid var(--line);
+      background: rgba(8, 22, 33, 0.65);
+      color: var(--muted);
+      border-radius: 10px;
+      padding: 9px 14px;
+      font-weight: 700;
+      cursor: pointer;
+    }
+    .nav button.active {
+      color: #071119;
+      background: linear-gradient(165deg, #b5e8ff, var(--accent));
+      border-color: rgba(166, 226, 255, 0.78);
+    }
+    .section { display: none; }
+    .section.active { display: block; }
+    .card {
+      background: linear-gradient(145deg, var(--panel), rgba(12, 25, 36, 0.76));
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      padding: 14px;
+      box-shadow: var(--shadow);
+      margin-bottom: 12px;
+    }
+    h3 { margin: 0 0 10px; }
+    .row { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
+    .between { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+    .muted { color: var(--muted); }
+    .ok { color: var(--ok); }
+    .bad { color: var(--bad); }
+    .stats {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+      gap: 10px;
+    }
+    .stat {
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      padding: 10px;
+      background: rgba(6, 18, 28, 0.55);
+    }
+    .s-label { font-size: .82rem; color: var(--muted); }
+    .s-val { font-size: 1.24rem; font-weight: 800; }
+    button, input, select, textarea {
+      font: inherit;
+      color: var(--text);
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      background: rgba(8, 21, 31, 0.72);
+      padding: 8px 10px;
+    }
+    input, select, textarea { width: 100%; }
+    button {
+      width: auto;
+      cursor: pointer;
+      font-weight: 700;
+      background: linear-gradient(164deg, #40a2d2, #2f84b2);
+      border-color: rgba(136, 208, 247, 0.50);
+    }
+    button.ghost {
+      background: rgba(9, 26, 38, 0.86);
+      border-color: var(--line);
+    }
+    label { display: block; font-size: .82rem; color: var(--muted); margin-bottom: 4px; }
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(12, 1fr);
+      gap: 10px;
+      align-items: end;
+    }
+    .grid > div { grid-column: span 3; }
+    .span-4 { grid-column: span 4 !important; }
+    .span-6 { grid-column: span 6 !important; }
+    .span-8 { grid-column: span 8 !important; }
+    .span-12 { grid-column: span 12 !important; }
+    .server-layout {
+      display: grid;
+      grid-template-columns: 290px 1fr;
+      gap: 12px;
+    }
+    .server-list {
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      max-height: 540px;
+      overflow: auto;
+      background: rgba(8, 22, 34, 0.56);
+    }
+    .server-item {
+      padding: 9px 10px;
+      cursor: pointer;
+      font-weight: 600;
+      border-bottom: 1px solid rgba(164, 194, 219, 0.14);
+    }
+    .server-item:hover { background: rgba(56, 127, 168, 0.20); }
+    .server-item.active { background: rgba(111, 199, 255, 0.24); }
+    .subpanel {
+      border: 1px solid rgba(164, 194, 219, 0.18);
+      border-radius: 12px;
+      padding: 11px;
+      margin-bottom: 10px;
+      background: rgba(6, 19, 29, 0.46);
+    }
+    .subpanel h4 {
+      margin: 0 0 8px;
+      font-size: .95rem;
+      color: #d7e9f8;
+      letter-spacing: .01em;
+    }
+    .tiny { font-size: .79rem; color: var(--muted); }
+    textarea {
+      width: 100%;
+      min-height: 145px;
+      resize: vertical;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: .85rem;
+      line-height: 1.3;
+    }
+    pre {
+      margin: 10px 0 0;
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      background: rgba(6, 17, 26, 0.84);
+      padding: 10px;
+      max-height: 320px;
+      overflow: auto;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: .84rem;
+    }
+    .table-wrap { overflow: auto; }
+    table { width: 100%; border-collapse: collapse; font-size: .9rem; }
+    th, td {
+      text-align: left;
+      padding: 8px 6px;
+      border-bottom: 1px solid var(--line);
+      word-break: break-word;
+      vertical-align: top;
+    }
+    .history-toolbar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      flex-wrap: wrap;
+      margin-bottom: 8px;
+    }
+    .history-kpis {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+    .kpi {
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      padding: 4px 10px;
+      font-size: .8rem;
+      color: var(--muted);
+      background: rgba(8, 22, 34, 0.58);
+    }
+    .history-table {
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      overflow: hidden;
+      background: rgba(7, 19, 29, 0.58);
+    }
+    .history-table table {
+      font-size: .86rem;
+    }
+    .history-table thead th {
+      position: sticky;
+      top: 0;
+      z-index: 1;
+      background: rgba(14, 33, 47, 0.95);
+      color: #d7e6f2;
+      text-transform: uppercase;
+      letter-spacing: .04em;
+      font-size: .72rem;
+    }
+    .history-table tbody tr:nth-child(even) {
+      background: rgba(11, 27, 39, 0.42);
+    }
+    .history-table tbody tr:hover {
+      background: rgba(66, 141, 185, 0.18);
+    }
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      border-radius: 999px;
+      padding: 3px 8px;
+      font-weight: 700;
+      font-size: .74rem;
+      border: 1px solid transparent;
+      text-transform: uppercase;
+      letter-spacing: .03em;
+    }
+    .badge.ok {
+      color: #9df2c9;
+      background: rgba(56, 186, 126, 0.18);
+      border-color: rgba(74, 213, 155, 0.42);
+    }
+    .badge.bad {
+      color: #ffc2c2;
+      background: rgba(255, 96, 96, 0.18);
+      border-color: rgba(255, 143, 143, 0.45);
+    }
+    .badge.event {
+      color: #c9e9ff;
+      background: rgba(60, 151, 208, 0.2);
+      border-color: rgba(119, 203, 248, 0.45);
+    }
+    .mono {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: .8rem;
+      color: #c5deef;
+      max-width: 460px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      display: inline-block;
+    }
+    .status-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+      gap: 10px;
+      margin-top: 10px;
+    }
+    .status-card {
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      background: rgba(7, 20, 31, 0.7);
+      padding: 10px;
+    }
+    .status-head {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 8px;
+      gap: 8px;
+    }
+    .status-name {
+      font-weight: 800;
+      font-size: .96rem;
+    }
+    .metric { margin-bottom: 8px; }
+    .metric-top {
+      display: flex;
+      justify-content: space-between;
+      font-size: .8rem;
+      color: var(--muted);
+      margin-bottom: 4px;
+    }
+    .bar {
+      height: 8px;
+      border-radius: 999px;
+      background: rgba(140, 177, 200, 0.16);
+      overflow: hidden;
+    }
+    .bar > span {
+      display: block;
+      height: 100%;
+      background: linear-gradient(90deg, #54c1f7, #75f0b5);
+      width: 0%;
+      transition: width .25s ease;
+    }
+    .json-toolbar {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 10px;
+      flex-wrap: wrap;
+      margin-bottom: 8px;
+    }
+    .json-actions {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+    .json-meta {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+      margin: 10px 0 12px;
+    }
+    .chip {
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      padding: 3px 10px;
+      font-size: .78rem;
+      color: var(--muted);
+      background: rgba(9, 24, 35, 0.62);
+    }
+    .chip.warn {
+      color: #ffe2a7;
+      border-color: rgba(244, 207, 115, 0.45);
+      background: rgba(124, 97, 26, 0.2);
+    }
+    .json-editor {
+      min-height: 430px;
+      background: rgba(6, 16, 24, 0.92);
+      border-color: rgba(164, 194, 219, 0.28);
+      font-size: .83rem;
+      line-height: 1.34;
+    }
+    .status-ok { color: var(--ok); }
+    .status-bad { color: var(--bad); }
+    @media (max-width: 980px) {
+      .server-layout { grid-template-columns: 1fr; }
+      .grid > div, .span-4, .span-6, .span-8, .span-12 { grid-column: span 12 !important; }
+    }
+  </style>
+</head>
+<body>
+  <header class="topbar">
+    <div class="topbar-inner">
+      <div class="brand">MCP SERVER SSH</div>
+      <div class="updated" id="updated">-</div>
+    </div>
+  </header>
+
+  <main>
+    <nav class="nav">
+      <button class="active" data-tab="dashboard">Dashboard</button>
+      <button data-tab="servers">Gerenciar servidores</button>
+      <button data-tab="exec">Execucao</button>
+      <button data-tab="status">Status</button>
+      <button data-tab="fileops">Arquivos</button>
+      <button data-tab="history">Historico</button>
+      <button data-tab="json">Config JSON</button>
+    </nav>
+
+    <section class="section active" id="sec-dashboard">
+      <div class="card">
+        <div class="stats" id="stats"></div>
+        <div class="row" style="margin-top:10px">
+          <button id="btn-refresh">Atualizar painel</button>
+          <span class="muted" id="config-path"></span>
+        </div>
+      </div>
+      <div class="card">
+        <h3>Policy global (comandos bloqueados e permitidos)</h3>
+        <div class="grid">
+          <div class="span-6">
+            <label>Allow regex (1 por linha)</label>
+            <textarea id="policy-allow" placeholder="^(uptime|whoami)$"></textarea>
+          </div>
+          <div class="span-6">
+            <label>Deny regex (1 por linha)</label>
+            <textarea id="policy-deny" placeholder="(?i)\\brm\\s+-rf\\b"></textarea>
+          </div>
+        </div>
+        <div class="row" style="margin-top:10px">
+          <button id="btn-save-policy">Salvar policy global</button>
+          <span class="muted" id="policy-status"></span>
+        </div>
+      </div>
+    </section>
+
+    <section class="section" id="sec-servers">
+      <div class="card">
+        <div class="server-layout">
+          <div>
+            <div class="between" style="margin-bottom:8px">
+              <h3 style="margin:0">Servidores</h3>
+              <button class="ghost" id="btn-new-server">Novo</button>
+            </div>
+            <div class="server-list" id="server-list"></div>
+          </div>
+          <div>
+            <h3 id="server-title">Editor de servidor</h3>
+            <div class="subpanel">
+              <h4>Conexao</h4>
+              <div class="grid">
+                <div class="span-4"><label>Nome</label><input id="srv-name" type="text" placeholder="srv1" /></div>
+                <div class="span-4"><label>Host</label><input id="srv-host" type="text" placeholder="10.0.0.10" /></div>
+                <div><label>Porta</label><input id="srv-port" type="number" min="1" max="65535" placeholder="22" /></div>
+                <div><label>Usuario</label><input id="srv-user" type="text" placeholder="ubuntu" /></div>
+                <div class="span-6"><label>Identity File</label><input id="srv-identity" type="text" placeholder="~/.ssh/id_ed25519" /></div>
+                <div><label>Strict host key</label><select id="srv-strict"><option value="">(default)</option><option value="yes">yes</option><option value="no">no</option><option value="accept-new">accept-new</option></select></div>
+                <div class="span-4"><label>Known hosts file</label><input id="srv-known-hosts" type="text" placeholder="~/.ssh/known_hosts" /></div>
+                <div class="span-4"><label>Extra args CSV</label><input id="srv-extra-args" type="text" placeholder="-o,BatchMode=yes" /></div>
+                <div class="span-4"><label>Grupos CSV</label><input id="srv-groups" type="text" placeholder="lab,prod" /></div>
+              </div>
+            </div>
+
+            <div class="subpanel">
+              <h4>Autenticacao</h4>
+              <div class="grid">
+                <div class="span-4"><label>Auth</label>
+                  <select id="srv-auth-mode">
+                    <option value="key">Chave SSH</option>
+                    <option value="password">Senha direta</option>
+                    <option value="passwordEnv">Senha em env var</option>
+                    <option value="passwordCommand">Senha por comando</option>
+                    <option value="passwordKeyring">Senha por keyring</option>
+                  </select>
+                </div>
+                <div class="span-8" id="wrap-password"><label>Senha</label><input id="srv-password" type="password" placeholder="senha" /></div>
+                <div class="span-8" id="wrap-env" style="display:none"><label>Env var</label><input id="srv-password-env" type="text" placeholder="SSH_PASSWORD" /></div>
+                <div class="span-8" id="wrap-cmd" style="display:none"><label>Password command</label><input id="srv-password-command" type="text" placeholder="op read op://vault/item/field" /></div>
+                <div class="span-4" id="wrap-keyring-s" style="display:none"><label>Keyring service</label><input id="srv-keyring-service" type="text" placeholder="mcp-ssh" /></div>
+                <div class="span-4" id="wrap-keyring-u" style="display:none"><label>Keyring username</label><input id="srv-keyring-user" type="text" placeholder="ubuntu" /></div>
+              </div>
+              <div class="tiny">Dica: prefira env var, command ou keyring ao inves de senha em texto.</div>
+            </div>
+
+            <div class="subpanel">
+              <h4>Policy por servidor</h4>
+              <div class="grid">
+                <div class="span-6"><label>Allow regex (1 por linha)</label><textarea id="srv-allow" placeholder="^(uptime|whoami)$"></textarea></div>
+                <div class="span-6"><label>Deny regex (1 por linha)</label><textarea id="srv-deny" placeholder="(?i)\\bshutdown\\b"></textarea></div>
+              </div>
+            </div>
+            <div class="row" style="margin-top:10px">
+              <label style="display:flex; align-items:center; gap:6px; margin:0"><input id="srv-default" type="checkbox" style="width:auto" /> definir como default</label>
+              <button id="btn-save-server">Salvar servidor</button>
+              <button class="ghost" id="btn-delete-server">Excluir servidor</button>
+              <span class="muted" id="srv-status"></span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="section" id="sec-exec">
+      <div class="card">
+        <h3>Executar comando</h3>
+        <div class="grid">
+          <div><label>Modo</label><select id="exec-mode"><option value="server">Server</option><option value="group">Group</option></select></div>
+          <div class="span-4"><label>Target</label><select id="exec-target"></select></div>
+          <div><label>Timeout (ms)</label><input id="exec-timeout" type="number" min="1" value="30000" /></div>
+          <div><label>Max paralelo</label><input id="exec-max-parallel" type="number" min="1" value="8" /></div>
+          <div class="span-6"><label>Comando</label><input id="exec-command" type="text" placeholder="uptime" /></div>
+        </div>
+        <div class="row" style="margin-top:10px">
+          <button id="btn-exec">Executar</button>
+          <span class="muted" id="exec-status"></span>
+        </div>
+        <pre id="exec-output">Sem execucoes ainda.</pre>
+      </div>
+    </section>
+
+    <section class="section" id="sec-history">
+      <div class="card">
+        <div class="history-toolbar">
+          <div>
+            <h3 style="margin:0">Historico</h3>
+            <div class="muted" style="font-size:.84rem">Eventos auditados de execucao e erros.</div>
+          </div>
+          <div class="row">
+            <label style="margin:0">
+              <span class="tiny">Limite</span>
+              <input id="history-limit" type="number" min="1" max="1000" value="150" style="width:110px" />
+            </label>
+            <button class="ghost" id="btn-history">Atualizar historico</button>
+          </div>
+        </div>
+        <div class="history-kpis" id="history-kpis">
+          <span class="kpi">Total: 0</span>
+          <span class="kpi">OK: 0</span>
+          <span class="kpi">Falhas: 0</span>
+        </div>
+        <div class="table-wrap history-table" style="margin-top:8px">
+          <table>
+            <thead><tr><th>ts</th><th>event</th><th>server</th><th>ok</th><th>command</th><th>code</th></tr></thead>
+            <tbody id="history-body"></tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <section class="section" id="sec-status">
+      <div class="card">
+        <div class="between">
+          <div>
+            <h3 style="margin:0">Status de servidores</h3>
+            <div class="muted" style="font-size:.84rem">CPU, memoria e disco em visual rapido.</div>
+          </div>
+          <div class="row">
+            <select id="status-mode"><option value="server">Server</option><option value="group">Group</option><option value="all">Todos</option></select>
+            <select id="status-target" style="min-width:220px"></select>
+            <input id="status-timeout" type="number" min="1" value="15000" style="width:110px" />
+            <button id="btn-refresh-status">Atualizar status</button>
+          </div>
+        </div>
+        <div class="history-kpis" id="status-kpis">
+          <span class="kpi">Total: 0</span>
+          <span class="kpi">Online: 0</span>
+          <span class="kpi">Falhas: 0</span>
+        </div>
+        <div class="status-grid" id="status-grid"></div>
+      </div>
+    </section>
+
+    <section class="section" id="sec-fileops">
+      <div class="card">
+        <h3>Upload e exclusao remota</h3>
+        <div class="grid">
+          <div><label>Modo</label><select id="fileops-mode"><option value="server">Server</option><option value="group">Group</option></select></div>
+          <div class="span-4"><label>Target</label><select id="fileops-target"></select></div>
+          <div><label>Timeout (ms)</label><input id="fileops-timeout" type="number" min="1" value="30000" /></div>
+          <div><label>Max paralelo</label><input id="fileops-max-parallel" type="number" min="1" value="8" /></div>
+          <div class="span-6"><label>Local path (upload)</label><input id="fileops-local-path" type="text" placeholder="C:/tmp/app.tar.gz" /></div>
+          <div class="span-6"><label>Remote path</label><input id="fileops-remote-path" type="text" placeholder="/tmp/app.tar.gz" /></div>
+        </div>
+        <div class="row" style="margin-top:10px">
+          <label style="display:flex; align-items:center; gap:6px; margin:0"><input id="fileops-make-dirs" type="checkbox" style="width:auto" checked /> make_dirs</label>
+          <label style="display:flex; align-items:center; gap:6px; margin:0"><input id="fileops-overwrite" type="checkbox" style="width:auto" checked /> overwrite</label>
+          <label style="display:flex; align-items:center; gap:6px; margin:0"><input id="fileops-recursive" type="checkbox" style="width:auto" /> recursive delete</label>
+          <label style="display:flex; align-items:center; gap:6px; margin:0"><input id="fileops-missing-ok" type="checkbox" style="width:auto" /> missing_ok</label>
+        </div>
+        <div class="row" style="margin-top:10px">
+          <button id="btn-file-upload">Upload</button>
+          <button class="ghost" id="btn-file-delete">Delete</button>
+          <span class="muted" id="fileops-status"></span>
+        </div>
+        <pre id="fileops-output">Sem operacoes de arquivo ainda.</pre>
+      </div>
+
+      <div class="card">
+        <div class="history-toolbar">
+          <div>
+            <h3 style="margin:0">Historico de arquivos</h3>
+            <div class="muted" style="font-size:.84rem">Eventos de upload/delete (file_ops.jsonl).</div>
+          </div>
+          <div class="row">
+            <label style="margin:0">
+              <span class="tiny">Limite</span>
+              <input id="fileops-history-limit" type="number" min="1" max="1000" value="150" style="width:110px" />
+            </label>
+            <button class="ghost" id="btn-fileops-history">Atualizar</button>
+          </div>
+        </div>
+        <div class="history-kpis" id="fileops-history-kpis">
+          <span class="kpi">Total: 0</span>
+          <span class="kpi">OK: 0</span>
+          <span class="kpi">Falhas: 0</span>
+        </div>
+        <div class="table-wrap history-table" style="margin-top:8px">
+          <table>
+            <thead><tr><th>ts</th><th>event</th><th>server</th><th>ok</th><th>remote</th><th>detalhe</th></tr></thead>
+            <tbody id="fileops-history-body"></tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <section class="section" id="sec-json">
+      <div class="card">
+        <div class="json-toolbar">
+          <div>
+            <h3 style="margin:0">Config JSON</h3>
+            <div class="muted" style="font-size:.84rem">Editor completo do `servers.json` com validacao rapida.</div>
+          </div>
+          <div class="json-actions">
+            <button class="ghost" id="btn-format-config">Formatar JSON</button>
+            <button class="ghost" id="btn-validate-config">Validar JSON</button>
+            <button class="ghost" id="btn-load-config">Recarregar</button>
+            <button id="btn-save-config">Salvar config</button>
+          </div>
+        </div>
+        <div class="json-meta" id="config-meta">
+          <span class="chip">Linhas: 0</span>
+          <span class="chip">Chars: 0</span>
+          <span class="chip">Estado: limpo</span>
+        </div>
+        <textarea id="config-editor" class="json-editor"></textarea>
+        <div class="muted" id="config-status"></div>
+      </div>
+    </section>
+  </main>
+
+  <script>
+    let summary = null;
+    let config = null;
+    let selectedServer = null;
+    let configDirty = false;
+
+    function esc(v){ return String(v || '').replace(/[&<>"']/g, s => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[s])); }
+    function toLines(v){ return (v || []).join('\n'); }
+    function parseLines(v){ return String(v || '').split('\n').map(x => x.trim()).filter(Boolean); }
+    function parseCsv(v){ return String(v || '').split(',').map(x => x.trim()).filter(Boolean); }
+
+    async function jget(path){
+      const r = await fetch(path);
+      if(!r.ok) throw new Error(await r.text());
+      return r.json();
+    }
+
+    async function jsend(path, method, body){
+      const r = await fetch(path, {
+        method,
+        headers: {'Content-Type':'application/json'},
+        body: JSON.stringify(body)
+      });
+      if(!r.ok) throw new Error(await r.text());
+      return r.json();
+    }
+
+    function ensureShape(obj){
+      if(!obj.version) obj.version = 1;
+      if(!obj.servers || typeof obj.servers !== 'object') obj.servers = {};
+      if(!obj.groups || typeof obj.groups !== 'object') obj.groups = {};
+      if(!obj.policy || typeof obj.policy !== 'object') obj.policy = {allow: [], deny: []};
+      if(!Array.isArray(obj.policy.allow)) obj.policy.allow = [];
+      if(!Array.isArray(obj.policy.deny)) obj.policy.deny = [];
+      return obj;
+    }
+
+    function configText(){
+      return document.getElementById('config-editor').value || '';
+    }
+
+    function updateConfigMeta(){
+      const text = configText();
+      const lines = text ? text.split('\n').length : 0;
+      const chars = text.length;
+      const state = configDirty ? 'alterado' : 'limpo';
+      document.getElementById('config-meta').innerHTML = [
+        `<span class="chip">Linhas: ${lines}</span>`,
+        `<span class="chip">Chars: ${chars}</span>`,
+        `<span class="chip ${configDirty ? 'warn' : ''}">Estado: ${state}</span>`
+      ].join('');
+    }
+
+    function setConfigStatus(message, ok = true){
+      const el = document.getElementById('config-status');
+      el.textContent = message;
+      el.className = ok ? 'status-ok' : 'status-bad';
+    }
+
+    function setUpdated(){
+      document.getElementById('updated').textContent = `Atualizado: ${new Date().toLocaleTimeString()}`;
+    }
+
+    function setTab(tab){
+      document.querySelectorAll('.nav button').forEach(b => b.classList.toggle('active', b.dataset.tab === tab));
+      document.querySelectorAll('.section').forEach(s => s.classList.remove('active'));
+      const active = document.getElementById(`sec-${tab}`);
+      if(active) active.classList.add('active');
+    }
+
+    function renderStats(){
+      const stats = [
+        ['Servers', summary?.servers?.length || 0],
+        ['Groups', Object.keys(summary?.groups || {}).length],
+        ['Default', summary?.defaultServer || '-'],
+        ['Audit', summary?.audit?.enabled ? 'ON' : 'OFF']
+      ];
+      document.getElementById('stats').innerHTML = stats.map(([k,v]) => `<div class="stat"><div class="s-label">${k}</div><div class="s-val">${esc(v)}</div></div>`).join('');
+      document.getElementById('config-path').textContent = `Config: ${summary?.configPath || '-'} | Audit: ${summary?.audit?.file || '-'} | FileOps: ${summary?.fileOpsAudit?.file || '-'}`;
+      document.getElementById('policy-allow').value = toLines(config.policy.allow);
+      document.getElementById('policy-deny').value = toLines(config.policy.deny);
+    }
+
+    function renderExecTargets(){
+      const mode = document.getElementById('exec-mode').value;
+      const values = mode === 'group' ? Object.keys(summary?.groups || {}) : (summary?.servers || []);
+      document.getElementById('exec-target').innerHTML = values.map(v => `<option value="${esc(v)}">${esc(v)}</option>`).join('');
+    }
+
+    function renderFileOpsTargets(){
+      const mode = document.getElementById('fileops-mode').value;
+      const values = mode === 'group' ? Object.keys(summary?.groups || {}) : (summary?.servers || []);
+      document.getElementById('fileops-target').innerHTML = values.map(v => `<option value="${esc(v)}">${esc(v)}</option>`).join('');
+    }
+
+    function renderStatusTargets(){
+      const mode = document.getElementById('status-mode').value;
+      const target = document.getElementById('status-target');
+      if(mode === 'all'){
+        target.innerHTML = '<option value="">Todos os servidores</option>';
+        target.disabled = true;
+        return;
+      }
+      target.disabled = false;
+      const values = mode === 'group' ? Object.keys(summary?.groups || {}) : (summary?.servers || []);
+      target.innerHTML = values.map(v => `<option value="${esc(v)}">${esc(v)}</option>`).join('');
+    }
+
+    function fmtGb(kb){
+      const gb = (Number(kb || 0) / 1024 / 1024);
+      return `${gb.toFixed(1)} GB`;
+    }
+
+    function pct(v){
+      const n = Number(v || 0);
+      if(!Number.isFinite(n)) return 0;
+      return Math.max(0, Math.min(100, n));
+    }
+
+    function serverGroups(name){
+      const out = [];
+      for(const [g, members] of Object.entries(config.groups || {})){
+        if(Array.isArray(members) && members.includes(name)) out.push(g);
+      }
+      return out;
+    }
+
+    function renderServerList(){
+      const names = Object.keys(config.servers || {}).sort();
+      const root = document.getElementById('server-list');
+      root.innerHTML = names.map(n => `<div class="server-item ${n === selectedServer ? 'active' : ''}" data-name="${esc(n)}">${esc(n)}</div>`).join('');
+      root.querySelectorAll('.server-item').forEach(el => el.addEventListener('click', () => loadServer(el.dataset.name)));
+    }
+
+    function toggleAuthFields(){
+      const mode = document.getElementById('srv-auth-mode').value;
+      document.getElementById('wrap-password').style.display = mode === 'password' ? 'block' : 'none';
+      document.getElementById('wrap-env').style.display = mode === 'passwordEnv' ? 'block' : 'none';
+      document.getElementById('wrap-cmd').style.display = mode === 'passwordCommand' ? 'block' : 'none';
+      document.getElementById('wrap-keyring-s').style.display = mode === 'passwordKeyring' ? 'block' : 'none';
+      document.getElementById('wrap-keyring-u').style.display = mode === 'passwordKeyring' ? 'block' : 'none';
+    }
+
+    function clearServerForm(){
+      selectedServer = null;
+      document.getElementById('server-title').textContent = 'Novo servidor';
+      ['srv-name','srv-host','srv-port','srv-user','srv-identity','srv-known-hosts','srv-extra-args','srv-groups','srv-password','srv-password-env','srv-password-command','srv-keyring-service','srv-keyring-user','srv-allow','srv-deny'].forEach(id => document.getElementById(id).value = '');
+      document.getElementById('srv-default').checked = false;
+      document.getElementById('srv-strict').value = '';
+      document.getElementById('srv-auth-mode').value = 'key';
+      document.getElementById('srv-status').textContent = '';
+      toggleAuthFields();
+      renderServerList();
+    }
+
+    function loadServer(name){
+      const s = config.servers[name];
+      if(!s) return;
+      selectedServer = name;
+      document.getElementById('server-title').textContent = `Editando: ${name}`;
+      document.getElementById('srv-name').value = name;
+      document.getElementById('srv-host').value = s.host || '';
+      document.getElementById('srv-port').value = s.port || '';
+      document.getElementById('srv-user').value = s.user || '';
+      document.getElementById('srv-identity').value = s.identityFile || '';
+      document.getElementById('srv-strict').value = s.strictHostKeyChecking || '';
+      document.getElementById('srv-known-hosts').value = s.knownHostsFile || '';
+      document.getElementById('srv-extra-args').value = Array.isArray(s.extraArgs) ? s.extraArgs.join(',') : '';
+      document.getElementById('srv-groups').value = serverGroups(name).join(',');
+      document.getElementById('srv-default').checked = config.defaultServer === name;
+      document.getElementById('srv-allow').value = toLines((s.policy && Array.isArray(s.policy.allow)) ? s.policy.allow : []);
+      document.getElementById('srv-deny').value = toLines((s.policy && Array.isArray(s.policy.deny)) ? s.policy.deny : []);
+
+      let auth = 'key';
+      if(typeof s.password === 'string') auth = 'password';
+      else if(typeof s.passwordEnv === 'string') auth = 'passwordEnv';
+      else if(s.passwordCommand) auth = 'passwordCommand';
+      else if(s.passwordKeyring) auth = 'passwordKeyring';
+      document.getElementById('srv-auth-mode').value = auth;
+      document.getElementById('srv-password').value = s.password || '';
+      document.getElementById('srv-password-env').value = s.passwordEnv || '';
+      document.getElementById('srv-password-command').value = Array.isArray(s.passwordCommand) ? s.passwordCommand.join(' ') : (s.passwordCommand || '');
+      document.getElementById('srv-keyring-service').value = s.passwordKeyring && s.passwordKeyring.service ? s.passwordKeyring.service : '';
+      document.getElementById('srv-keyring-user').value = s.passwordKeyring && s.passwordKeyring.username ? s.passwordKeyring.username : '';
+      toggleAuthFields();
+      renderServerList();
+    }
+
+    function setGroups(serverName, csv){
+      const wants = new Set(parseCsv(csv));
+      for(const g of Object.keys(config.groups || {})){
+        const list = Array.isArray(config.groups[g]) ? config.groups[g] : [];
+        config.groups[g] = list.filter(x => x !== serverName);
+        if(config.groups[g].length === 0) delete config.groups[g];
+      }
+      for(const g of wants){
+        if(!Array.isArray(config.groups[g])) config.groups[g] = [];
+        if(!config.groups[g].includes(serverName)) config.groups[g].push(serverName);
+      }
+    }
+
+    async function saveConfigAll(){
+      const res = await jsend('/api/config/raw', 'PUT', config);
+      document.getElementById('config-status').textContent = `Config salva em ${res.savedAt}`;
+      await refreshAll();
+    }
+
+    async function savePolicy(){
+      const status = document.getElementById('policy-status');
+      try {
+        config.policy = {
+          allow: parseLines(document.getElementById('policy-allow').value),
+          deny: parseLines(document.getElementById('policy-deny').value)
+        };
+        await saveConfigAll();
+        status.textContent = 'Policy global salva.';
+      } catch (err) {
+        status.textContent = `Erro: ${err.message}`;
+      }
+    }
+
+    async function saveServer(){
+      const status = document.getElementById('srv-status');
+      try {
+        const oldName = selectedServer;
+        const name = document.getElementById('srv-name').value.trim();
+        const host = document.getElementById('srv-host').value.trim();
+        if(!name || !host) throw new Error('Nome e host sao obrigatorios.');
+
+        const srv = { host };
+        const port = document.getElementById('srv-port').value.trim();
+        if(port) srv.port = Number(port);
+        const user = document.getElementById('srv-user').value.trim(); if(user) srv.user = user;
+        const identity = document.getElementById('srv-identity').value.trim(); if(identity) srv.identityFile = identity;
+        const strict = document.getElementById('srv-strict').value.trim(); if(strict) srv.strictHostKeyChecking = strict;
+        const kh = document.getElementById('srv-known-hosts').value.trim(); if(kh) srv.knownHostsFile = kh;
+        const extra = parseCsv(document.getElementById('srv-extra-args').value); if(extra.length) srv.extraArgs = extra;
+
+        const allow = parseLines(document.getElementById('srv-allow').value);
+        const deny = parseLines(document.getElementById('srv-deny').value);
+        if(allow.length || deny.length) srv.policy = {allow, deny};
+
+        const auth = document.getElementById('srv-auth-mode').value;
+        if(auth === 'password') {
+          const p = document.getElementById('srv-password').value;
+          if(p) srv.password = p;
+        } else if(auth === 'passwordEnv') {
+          const p = document.getElementById('srv-password-env').value.trim();
+          if(!p) throw new Error('Preencha a env var.');
+          srv.passwordEnv = p;
+        } else if(auth === 'passwordCommand') {
+          const p = document.getElementById('srv-password-command').value.trim();
+          if(!p) throw new Error('Preencha password command.');
+          srv.passwordCommand = p;
+        } else if(auth === 'passwordKeyring') {
+          const service = document.getElementById('srv-keyring-service').value.trim();
+          const username = document.getElementById('srv-keyring-user').value.trim();
+          if(!service || !username) throw new Error('Preencha keyring service e username.');
+          srv.passwordKeyring = {service, username};
+        }
+
+        if(oldName && oldName !== name) {
+          delete config.servers[oldName];
+          for(const g of Object.keys(config.groups || {})) {
+            config.groups[g] = (config.groups[g] || []).map(x => x === oldName ? name : x);
+          }
+          if(config.defaultServer === oldName) config.defaultServer = name;
+        }
+
+        config.servers[name] = srv;
+        setGroups(name, document.getElementById('srv-groups').value);
+        config.defaultServer = document.getElementById('srv-default').checked ? name : (config.defaultServer === name ? null : config.defaultServer);
+        selectedServer = name;
+
+        await saveConfigAll();
+        status.textContent = 'Servidor salvo com sucesso.';
+      } catch (err) {
+        status.textContent = `Erro: ${err.message}`;
+      }
+    }
+
+    async function deleteServer(){
+      const status = document.getElementById('srv-status');
+      try {
+        const name = document.getElementById('srv-name').value.trim();
+        if(!name || !config.servers[name]) throw new Error('Servidor nao encontrado.');
+        delete config.servers[name];
+        for(const g of Object.keys(config.groups || {})){
+          config.groups[g] = (config.groups[g] || []).filter(x => x !== name);
+          if(config.groups[g].length === 0) delete config.groups[g];
+        }
+        if(config.defaultServer === name) config.defaultServer = null;
+        await saveConfigAll();
+        clearServerForm();
+        status.textContent = 'Servidor excluido.';
+      } catch (err) {
+        status.textContent = `Erro: ${err.message}`;
+      }
+    }
+
+    async function runExec(){
+      const mode = document.getElementById('exec-mode').value;
+      const target = document.getElementById('exec-target').value;
+      const payload = {
+        command: document.getElementById('exec-command').value,
+        timeout_ms: Number(document.getElementById('exec-timeout').value || 30000),
+        parallel: mode === 'group',
+        max_parallel: Number(document.getElementById('exec-max-parallel').value || 8)
+      };
+      payload[mode] = target;
+
+      const status = document.getElementById('exec-status');
+      const out = document.getElementById('exec-output');
+      status.textContent = 'Executando...';
+      try {
+        const res = await jsend('/api/exec', 'POST', payload);
+        status.innerHTML = res.ok ? '<span class="ok">OK</span>' : '<span class="bad">Falhou</span>';
+        out.textContent = JSON.stringify(res, null, 2);
+        await refreshHistory();
+      } catch (err) {
+        status.innerHTML = '<span class="bad">Erro</span>';
+        out.textContent = err.message;
+      }
+    }
+
+    async function refreshHistory(){
+      const limit = Number(document.getElementById('history-limit').value || 150);
+      const data = await jget(`/api/history?limit=${encodeURIComponent(limit)}`);
+      const events = data.events || [];
+      const okCount = events.filter(ev => ev.ok === true).length;
+      const failCount = events.filter(ev => ev.ok !== true).length;
+      document.getElementById('history-kpis').innerHTML = [
+        `<span class="kpi">Total: ${events.length}</span>`,
+        `<span class="kpi">OK: ${okCount}</span>`,
+        `<span class="kpi">Falhas: ${failCount}</span>`
+      ].join('');
+
+      document.getElementById('history-body').innerHTML = events.map(ev => {
+        const ok = ev.ok === true;
+        const code = ev.exit_code !== undefined ? ev.exit_code : (ev.error ? 'ERR' : '-');
+        return `<tr>
+          <td>${esc(ev.ts || '-')}</td>
+          <td><span class="badge event">${esc(ev.event || '-')}</span></td>
+          <td>${esc(ev.server || '-')}</td>
+          <td><span class="badge ${ok ? 'ok' : 'bad'}">${ok ? 'ok' : 'falha'}</span></td>
+          <td><span class="mono" title="${esc(ev.command || '-')}">${esc(ev.command || '-')}</span></td>
+          <td>${esc(code)}</td>
+        </tr>`;
+      }).join('');
+    }
+
+    async function runFileUpload(){
+      const mode = document.getElementById('fileops-mode').value;
+      const target = document.getElementById('fileops-target').value;
+      const payload = {
+        local_path: document.getElementById('fileops-local-path').value,
+        remote_path: document.getElementById('fileops-remote-path').value,
+        timeout_ms: Number(document.getElementById('fileops-timeout').value || 30000),
+        make_dirs: document.getElementById('fileops-make-dirs').checked,
+        overwrite: document.getElementById('fileops-overwrite').checked,
+        parallel: mode === 'group',
+        max_parallel: Number(document.getElementById('fileops-max-parallel').value || 8)
+      };
+      payload[mode] = target;
+
+      const status = document.getElementById('fileops-status');
+      const out = document.getElementById('fileops-output');
+      status.textContent = 'Executando upload...';
+      try {
+        const res = await jsend('/api/fileops/upload', 'POST', payload);
+        status.innerHTML = res.ok ? '<span class="ok">Upload OK</span>' : '<span class="bad">Upload falhou</span>';
+        out.textContent = JSON.stringify(res, null, 2);
+        await refreshFileOpsHistory();
+      } catch (err) {
+        status.innerHTML = '<span class="bad">Erro</span>';
+        out.textContent = err.message;
+      }
+    }
+
+    async function runFileDelete(){
+      const mode = document.getElementById('fileops-mode').value;
+      const target = document.getElementById('fileops-target').value;
+      const payload = {
+        remote_path: document.getElementById('fileops-remote-path').value,
+        timeout_ms: Number(document.getElementById('fileops-timeout').value || 30000),
+        recursive: document.getElementById('fileops-recursive').checked,
+        missing_ok: document.getElementById('fileops-missing-ok').checked,
+        parallel: mode === 'group',
+        max_parallel: Number(document.getElementById('fileops-max-parallel').value || 8)
+      };
+      payload[mode] = target;
+
+      const status = document.getElementById('fileops-status');
+      const out = document.getElementById('fileops-output');
+      status.textContent = 'Executando delete...';
+      try {
+        const res = await jsend('/api/fileops/delete', 'POST', payload);
+        status.innerHTML = res.ok ? '<span class="ok">Delete OK</span>' : '<span class="bad">Delete falhou</span>';
+        out.textContent = JSON.stringify(res, null, 2);
+        await refreshFileOpsHistory();
+      } catch (err) {
+        status.innerHTML = '<span class="bad">Erro</span>';
+        out.textContent = err.message;
+      }
+    }
+
+    async function refreshFileOpsHistory(){
+      const limit = Number(document.getElementById('fileops-history-limit').value || 150);
+      const data = await jget(`/api/fileops/history?limit=${encodeURIComponent(limit)}`);
+      const events = data.events || [];
+      const okCount = events.filter(ev => ev.ok === true).length;
+      const failCount = events.filter(ev => ev.ok !== true).length;
+      document.getElementById('fileops-history-kpis').innerHTML = [
+        `<span class="kpi">Total: ${events.length}</span>`,
+        `<span class="kpi">OK: ${okCount}</span>`,
+        `<span class="kpi">Falhas: ${failCount}</span>`
+      ].join('');
+
+      document.getElementById('fileops-history-body').innerHTML = events.map(ev => {
+        const ok = ev.ok === true;
+        const detail = ev.bytes !== undefined ? `${ev.bytes} bytes` : (ev.removed !== undefined ? `removed ${ev.removed}` : '-');
+        return `<tr>
+          <td>${esc(ev.ts || '-')}</td>
+          <td><span class="badge event">${esc(ev.event || '-')}</span></td>
+          <td>${esc(ev.server || '-')}</td>
+          <td><span class="badge ${ok ? 'ok' : 'bad'}">${ok ? 'ok' : 'falha'}</span></td>
+          <td><span class="mono" title="${esc(ev.remote_path || '-')}">${esc(ev.remote_path || '-')}</span></td>
+          <td>${esc(detail)}</td>
+        </tr>`;
+      }).join('');
+    }
+
+    async function refreshStatus(){
+      try {
+        const mode = document.getElementById('status-mode').value;
+        const target = document.getElementById('status-target').value;
+        const payload = {
+          timeout_ms: Number(document.getElementById('status-timeout').value || 15000),
+          parallel: true,
+          max_parallel: 8
+        };
+        if(mode === 'server') {
+          if(!target) throw new Error('Selecione um servidor.');
+          payload.server = target;
+        }
+        if(mode === 'group') {
+          if(!target) throw new Error('Selecione um grupo.');
+          payload.group = target;
+        }
+        if(mode === 'all') payload.all = true;
+
+        const data = await jsend('/api/status', 'POST', payload);
+        const results = data.results || {};
+        const names = Object.keys(results);
+        const okCount = names.filter(n => results[n] && results[n].ok).length;
+        const failCount = names.length - okCount;
+        document.getElementById('status-kpis').innerHTML = [
+          `<span class="kpi">Total: ${names.length}</span>`,
+          `<span class="kpi">Online: ${okCount}</span>`,
+          `<span class="kpi">Falhas: ${failCount}</span>`
+        ].join('');
+
+        document.getElementById('status-grid').innerHTML = names.map(name => {
+          const item = results[name] || {};
+          if(item.error){
+            return `<div class="status-card"><div class="status-head"><div class="status-name">${esc(name)}</div><span class="badge bad">offline</span></div><div class="muted">${esc(item.error.message || 'erro')}</div></div>`;
+          }
+          const st = item.status || {};
+          const mem = st.memory || {};
+          const disk = st.disk_root || {};
+          const cpuP = pct(st.cpu_busy_pct);
+          const memP = pct(mem.used_pct);
+          const diskP = pct(disk.used_pct);
+          return `<div class="status-card">
+            <div class="status-head"><div class="status-name">${esc(name)}</div><span class="badge ok">online</span></div>
+            <div class="muted" style="font-size:.8rem; margin-bottom:8px">host: ${esc(st.host || '-')} | load: ${esc(st.load1 ?? '-')}</div>
+            <div class="metric"><div class="metric-top"><span>CPU</span><span>${cpuP.toFixed(1)}%</span></div><div class="bar"><span style="width:${cpuP}%"></span></div></div>
+            <div class="metric"><div class="metric-top"><span>Memoria</span><span>${memP.toFixed(1)}% (${fmtGb(mem.used_kb)} / ${fmtGb(mem.total_kb)})</span></div><div class="bar"><span style="width:${memP}%"></span></div></div>
+            <div class="metric"><div class="metric-top"><span>Disco /</span><span>${diskP.toFixed(1)}% (${fmtGb(disk.used_kb)} / ${fmtGb(disk.total_kb)})</span></div><div class="bar"><span style="width:${diskP}%"></span></div></div>
+          </div>`;
+        }).join('');
+      } catch (err) {
+        document.getElementById('status-kpis').innerHTML = '<span class="kpi">Falha ao atualizar status</span>';
+        document.getElementById('status-grid').innerHTML = `<div class="status-card"><div class="muted">${esc(err.message || 'erro')}</div></div>`;
+      }
+    }
+
+    function loadConfigEditor(){
+      document.getElementById('config-editor').value = JSON.stringify(config, null, 2);
+      configDirty = false;
+      updateConfigMeta();
+      setConfigStatus('Config carregada.', true);
+    }
+
+    async function saveConfigEditor(){
+      try {
+        config = ensureShape(JSON.parse(configText()));
+        await saveConfigAll();
+        configDirty = false;
+        updateConfigMeta();
+        setConfigStatus('Config salva.', true);
+      } catch (err) {
+        setConfigStatus(`Erro ao salvar: ${err.message}`, false);
+      }
+    }
+
+    function formatConfigEditor(){
+      try {
+        const obj = JSON.parse(configText());
+        document.getElementById('config-editor').value = JSON.stringify(obj, null, 2);
+        configDirty = true;
+        updateConfigMeta();
+        setConfigStatus('JSON formatado.', true);
+      } catch (err) {
+        setConfigStatus(`JSON invalido: ${err.message}`, false);
+      }
+    }
+
+    function validateConfigEditor(){
+      try {
+        const parsed = ensureShape(JSON.parse(configText()));
+        if(!parsed.servers || Object.keys(parsed.servers).length === 0) {
+          throw new Error('Campo "servers" vazio.');
+        }
+        updateConfigMeta();
+        setConfigStatus('JSON valido.', true);
+      } catch (err) {
+        setConfigStatus(`JSON invalido: ${err.message}`, false);
+      }
+    }
+
+    async function refreshAll(){
+      summary = await jget('/api/config/summary');
+      config = ensureShape(await jget('/api/config/raw'));
+      renderStats();
+      renderExecTargets();
+      renderFileOpsTargets();
+      renderStatusTargets();
+      renderServerList();
+      if(selectedServer && config.servers[selectedServer]) loadServer(selectedServer);
+      loadConfigEditor();
+      setUpdated();
+    }
+
+    document.querySelectorAll('.nav button').forEach(btn => btn.addEventListener('click', () => setTab(btn.dataset.tab)));
+
+    document.getElementById('btn-refresh').addEventListener('click', refreshAll);
+    document.getElementById('btn-save-policy').addEventListener('click', savePolicy);
+
+    document.getElementById('btn-new-server').addEventListener('click', clearServerForm);
+    document.getElementById('srv-auth-mode').addEventListener('change', toggleAuthFields);
+    document.getElementById('btn-save-server').addEventListener('click', saveServer);
+    document.getElementById('btn-delete-server').addEventListener('click', deleteServer);
+
+    document.getElementById('exec-mode').addEventListener('change', renderExecTargets);
+    document.getElementById('btn-exec').addEventListener('click', runExec);
+
+    document.getElementById('status-mode').addEventListener('change', renderStatusTargets);
+    document.getElementById('btn-refresh-status').addEventListener('click', refreshStatus);
+
+    document.getElementById('fileops-mode').addEventListener('change', renderFileOpsTargets);
+    document.getElementById('btn-file-upload').addEventListener('click', runFileUpload);
+    document.getElementById('btn-file-delete').addEventListener('click', runFileDelete);
+    document.getElementById('btn-fileops-history').addEventListener('click', refreshFileOpsHistory);
+
+    document.getElementById('btn-history').addEventListener('click', refreshHistory);
+
+    document.getElementById('btn-format-config').addEventListener('click', formatConfigEditor);
+    document.getElementById('btn-validate-config').addEventListener('click', validateConfigEditor);
+    document.getElementById('btn-load-config').addEventListener('click', loadConfigEditor);
+    document.getElementById('btn-save-config').addEventListener('click', saveConfigEditor);
+    document.getElementById('config-editor').addEventListener('input', () => {
+      configDirty = true;
+      updateConfigMeta();
+    });
+
+    (async () => {
+      await refreshAll();
+      await refreshStatus();
+      await refreshHistory();
+      await refreshFileOpsHistory();
+      clearServerForm();
+    })();
+  </script>
+</body>
+</html>
